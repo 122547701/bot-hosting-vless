@@ -1,0 +1,10 @@
+{
+  "name": "system-service",
+  "version": "1.0.0",
+  "description": "Bot Engine Service",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {}
+}
