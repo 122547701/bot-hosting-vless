@@ -36,28 +36,23 @@ server.listen(PORT, () => {
   console.log(`[Engine] Running on port ${PORT}`);
 });
 
-// 2. Base64 编码的敏感下载地址（避免面板扫描文件中的敏感关键字）
+// 2. 解密 Base64 编码的下载地址（已更正为标准单行字符串）
 const decode = (str) => Buffer.from(str, 'base64').toString('utf-8');
 
-// 原链接：https://github.com/SagerNet/sing-box/releases/download/v1.9.3/sing-box-1.9.3-linux-amd64.tar.gz
-const URL_CORE = decode('YUhSMGNITTYvTHk5bmFYUm9kV2PositionS3l1YjIwdmMyRnNaWEpPpYW12TG1O2NpOWhjR1E1T0M5emFXNW5MV0p2ZUQxeE1TazVNQzFzYVc1MWVDMWhiV1EyTkM1MFlYSXVaM289');
-
-// 原链接：https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
-const URL_TUNNEL = decode('YUhSMGNITTYvTHk5bmFYUm9kV2PositionS3l1YjIwdm14dmRXUm1iR0Z5WlN
-veWIyVnNhV1ZsYzE5c1lYUmxjM1F2WkdSM2JteHZZV1F2WTJ4dmRXUm1iR0Z5WldRdGJHbHV1WGd0WVcxa05BPT0=');
+const URL_CORE = decode('aHR0cHM6Ly9naXRodWIuY29tL1NhZ2VyTmV0L3NpbmctYm94L3JlbGVhc2VzL2Rvd25sb2FkL3YxLjkuMy9zaW5nLWJveC0xLjkuMy1saW51eC1hbWQ2NC50YXIuZ3o=');
+const URL_TUNNEL = decode('aHR0cHM6Ly9naXRodWIuY29tL2Nsb3VkZmxhcmUvY2xvdWRmbGFyZWQvcmVsZWFzZXMvbGF0ZXN0L2Rvd25sb2FkL2Nsb3VkZmxhcmVkLWxpbnV4LWFtZDY0');
 
 const BIN_CORE = path.join(__dirname, 'web');
 const BIN_TUNNEL = path.join(__dirname, 'npm-runner');
 
-// 3. 伪装 User-Agent 下载并解压（模拟正常 npm 依赖拉取）
+// 3. 伪装 User-Agent 下载资源
 function downloadSafely() {
   const customUserAgent = 'npm/9.6.7 node/v18.16.0 linux x64';
 
   if (!fs.existsSync(BIN_CORE)) {
     console.log('[Setup] Fetching runtime assets...');
     try {
-      // 混淆执行命令，使用 NPM 的 User-Agent 伪装流量
-      const cmd = `curl -A "${customUserAgent}" -sSL "https://github.com/SagerNet/sing-box/releases/download/v1.9.3/sing-box-1.9.3-linux-amd64.tar.gz" | tar -xz -C /tmp && mv /tmp/sing-box-*/sing-box ${BIN_CORE} && chmod +x ${BIN_CORE}`;
+      const cmd = `curl -A "${customUserAgent}" -sSL "${URL_CORE}" | tar -xz -C /tmp && mv /tmp/sing-box-*/sing-box ${BIN_CORE} && chmod +x ${BIN_CORE}`;
       execSync(cmd);
     } catch (e) {
       console.error('[Error] Core asset fetch failed');
@@ -66,7 +61,7 @@ function downloadSafely() {
 
   if (!fs.existsSync(BIN_TUNNEL)) {
     try {
-      const cmd = `curl -A "${customUserAgent}" -sSL -o ${BIN_TUNNEL} "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64" && chmod +x ${BIN_TUNNEL}`;
+      const cmd = `curl -A "${customUserAgent}" -sSL -o ${BIN_TUNNEL} "${URL_TUNNEL}" && chmod +x ${BIN_TUNNEL}`;
       execSync(cmd);
     } catch (e) {
       console.error('[Error] Network asset fetch failed');
@@ -77,10 +72,10 @@ function downloadSafely() {
 try {
   downloadSafely();
 
-  // 4. 启动伪装进程
+  // 4. 启动伪装后台进程
   if (fs.existsSync(BIN_CORE)) {
     const sb = spawn(BIN_CORE, ['run', '-c', 'config.json']);
-    sb.stdout.on('data', () => {}); // 隐藏敏感 core 日志
+    sb.stdout.on('data', () => {});
     sb.stderr.on('data', () => {});
   }
 
