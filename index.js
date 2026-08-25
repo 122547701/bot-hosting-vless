@@ -4,14 +4,14 @@ const { spawn, execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-process.on('uncaughtException', (err) => console.error('[Warning] Uncaught Exception:', err.message));
-process.on('unhandledRejection', (reason) => console.error('[Warning] Unhandled Rejection:', reason));
+process.on('uncaughtException', (err) => console.error('[Warning]', err.message));
+process.on('unhandledRejection', (reason) => console.error('[Warning]', reason));
 
-const PORT = process.env.PORT || 3000;
+// 自动获取翼龙面板分配的 SERVER_PORT (25150)
+const PORT = process.env.SERVER_PORT || process.env.PORT || 3000;
 const INTERNAL_PORT = 8080;
 
-// 读取 config.json 中的 UUID，读取失败时自动使用默认 UUID
-let UUID = 'e8a946c5-4089-4e78-a2cd-3e3c0ef3b4e6';
+let UUID = '9798afef-b100-4bc0-808b-91491f85a913';
 try {
   const configFile = fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8');
   const configJson = JSON.parse(configFile);
@@ -22,25 +22,10 @@ try {
 
 let currentCfDomain = '';
 
-// 1. Web 服务：同时提供伪装与网页一键获取节点功能
+// 1. Web 服务与 WS 转发
 const server = http.createServer((req, res) => {
-  if (req.url === '/node-info') {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    const cfLink = currentCfDomain 
-      ? `vless://${UUID}@${currentCfDomain}:443?encryption=none&security=tls&sni=${currentCfDomain}&type=ws&host=${currentCfDomain}&path=%2Fvless-ws#CF-Tunnel` 
-      : '正在生成隧道中，请刷新页面...';
-    
-    res.end(`
-      <h2>节点快捷获取页</h2>
-      <p><b>UUID:</b> ${UUID}</p>
-      <p><b>CF 隧道节点链接:</b></p>
-      <textarea style="width:100%;height:80px;">${cfLink}</textarea>
-    `);
-    return;
-  }
-
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end('<h1>Bot Engine Service</h1><p>Status: Active</p>');
+  res.end('<h1>Bot Runtime Active</h1>');
 });
 
 server.on('upgrade', (req, socket, head) => {
@@ -62,11 +47,12 @@ server.on('upgrade', (req, socket, head) => {
   }
 });
 
+// 绑定 SERVER_PORT 端口
 server.listen(PORT, () => {
-  console.log(`[Engine] Running on port ${PORT}`);
+  console.log(`[Engine] Successfully listening on port: ${PORT}`);
 });
 
-// 2. 解密 Base64 下载地址
+// 2. 解密 Base64 运行资源
 const decode = (str) => Buffer.from(str, 'base64').toString('utf-8');
 const URL_CORE = decode('aHR0cHM6Ly9naXRodWIuY29tL1NhZ2VyTmV0L3NpbmctYm94L3JlbGVhc2VzL2Rvd25sb2FkL3YxLjkuMy9zaW5nLWJveC0xLjkuMy1saW51eC1hbWQ2NC50YXIuZ3o=');
 const URL_TUNNEL = decode('aHR0cHM6Ly9naXRodWIuY29tL2Nsb3VkZmxhcmUvY2xvdWRmbGFyZWQvcmVsZWFzZXMvbGF0ZXN0L2Rvd25sb2FkL2Nsb3VkZmxhcmVkLWxpbnV4LWFtZDY0');
@@ -112,13 +98,13 @@ try {
           currentCfDomain = fullUrl.replace('https://', '');
           
           const cfVlessLink = `vless://${UUID}@${currentCfDomain}:443?encryption=none&security=tls&sni=${currentCfDomain}&type=ws&host=${currentCfDomain}&path=%2Fvless-ws#CF-Tunnel`;
-          const nativeTemplate = `vless://${UUID}@<公网IP或域名>:<公网端口>?encryption=none&security=none&type=ws&path=%2Fvless-ws#Native-Direct`;
+          const nativeLink = `vless://${UUID}@fi3.bot-hosting.net:${PORT}?encryption=none&security=none&type=ws&path=%2Fvless-ws#Native-Direct`;
 
           console.log('\n==================================================');
-          console.log('🚀【CF 隧道加速节点链接】(可直接复制导入客户端):');
+          console.log('🚀【CF 隧道加速节点链接】:');
           console.log(cfVlessLink);
-          console.log('\n⚡【原生直连节点链接模板】(需手动替换公网IP和端口):');
-          console.log(nativeTemplate);
+          console.log('\n⚡【原生直连节点链接】:');
+          console.log(nativeLink);
           console.log('==================================================\n');
         }
       });
