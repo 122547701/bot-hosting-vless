@@ -1,48 +1,48 @@
 const { spawn, execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const dns = require('dns').promises;
 
 process.on('uncaughtException', (err) => console.error('[Error]', err.message));
 process.on('unhandledRejection', (reason) => console.error('[Error]', reason));
 
-// 1. 动态自动获取分配端口
 const PORT = parseInt(process.env.SERVER_PORT || process.env.PORT || 3000);
 const configPath = path.join(__dirname, 'config.json');
 
-// 2. 动态自动精准获取公网 IP / 域名 (严格过滤 0.0.0.0 及内网保留地址)
-let DOMAIN = '';
-
+// 1. 动态获取当前容器真实公网 IP
+let IP = '';
 const fetchPublicIP = () => {
   const apis = [
     'curl -sSL --max-time 3 https://api.ipify.org',
     'curl -sSL --max-time 3 https://ifconfig.me',
-    'curl -sSL --max-time 3 https://icanhazip.com',
-    'curl -sSL --max-time 3 https://api.ip.sb/ip'
+    'curl -sSL --max-time 3 https://icanhazip.com'
   ];
   for (const cmd of apis) {
     try {
       const ip = execSync(cmd, { encoding: 'utf8' }).trim();
-      // 匹配合法公网 IPv4，且排除 0.0.0.0 与 127.x.x.x
       if (ip && /^(\d{1,3}\.){3}\d{1,3}$/.test(ip) && !ip.startsWith('0.') && !ip.startsWith('127.')) {
         return ip;
       }
     } catch (e) {}
   }
-  return null;
+  return '127.0.0.1';
 };
 
-DOMAIN = fetchPublicIP();
+IP = fetchPublicIP();
 
-// 如果 API 抓取受限，自动从系统环境变量或主机名推断真实节点域名
-if (!DOMAIN) {
-  const envIp = process.env.SERVER_IP;
-  if (envIp && envIp !== '0.0.0.0' && envIp !== '127.0.0.1') {
-    DOMAIN = envIp;
-  } else {
-    const hostname = os.hostname();
-    DOMAIN = hostname ? `${hostname}.bot-hosting.cloud` : '127.0.0.1';
+// 2. 纯动态 PTR 反向解析：向 DNS 询问当前 IP 绑定的真实域名（零字典、零硬编码）
+async function getDynamicDomain(targetIp) {
+  if (!targetIp || targetIp === '127.0.0.1') return null;
+  try {
+    const hostnames = await dns.reverse(targetIp);
+    if (hostnames && hostnames.length > 0) {
+      // 自动返回如 fi14.bot-hosting.cloud 或新服务器绑定的 PTR 域名
+      return hostnames[0];
+    }
+  } catch (e) {
+    // 若机房未配置 PTR 记录，退回获取主机名
   }
+  return null;
 }
 
 // 3. 清理残留进程
@@ -51,9 +51,8 @@ try {
   execSync('pkill -f npm-runner || true');
 } catch (e) {}
 
-// 4. 动态读取 config.json 中的 UUID
+// 4. 动态读取 UUID 并写入配置文件
 let UUID = '0febdf96-c364-4a8a-af2b-7707e102e31a';
-
 try {
   if (fs.existsSync(configPath)) {
     const configData = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -65,7 +64,6 @@ try {
   console.error('[Config Read Error]', e.message);
 }
 
-// 自动写入配置文件 (Sing-box 本地监听 0.0.0.0 以接收流量)
 const finalConfig = {
   log: { level: "info" },
   inbounds: [{
@@ -116,24 +114,34 @@ if (fs.existsSync(BIN_CORE)) {
   runCore();
 }
 
-// 7. 启动 Cloudflare 隧道并输出准确的节点地址
+// 7. 启动隧道并自动打印纯动态获取的节点
 if (fs.existsSync(BIN_TUNNEL)) {
-  const runTunnel = () => {
+  const runTunnel = async () => {
     console.log('[Tunnel] Starting Cloudflare Tunnel...');
+    const domainName = await getDynamicDomain(IP);
     const cf = spawn(BIN_TUNNEL, ['tunnel', '--url', `http://127.0.0.1:${PORT}`]);
     let printed = false;
+    
     cf.stderr.on('data', data => {
       const match = data.toString().match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/);
       if (match && !printed) {
         printed = true;
         const sub = match[0].replace('https://', '');
         console.log('\n==================================================');
-        console.log(`[Auto-Detect] 自动精准抓取外网地址: ${DOMAIN}:${PORT}`);
-        console.log(`[UUID Sync] 当前已生效 UUID: ${UUID}`);
-        console.log('🚀【CF 隧道加密节点链接】:');
+        console.log(`[Auto-Detect] 真实外网 IP: ${IP}`);
+        console.log(`[Auto-Detect] PTR 反查解析域名: ${domainName || '机房未绑定反向 PTR 记录'}`);
+        console.log(`[UUID Sync] 生效 UUID: ${UUID}`);
+        
+        console.log('\n🚀【CF 隧道加密节点链接】:');
         console.log(`vless://${UUID}@${sub}:443?encryption=none&security=tls&sni=${sub}&type=ws&host=${sub}&path=%2Fvless-ws#CF-Tunnel`);
-        console.log('\n⚡【原生直连节点链接】:');
-        console.log(`vless://${UUID}@${DOMAIN}:${PORT}?encryption=none&security=none&type=ws&host=${DOMAIN}&path=%2Fvless-ws#Native-Direct`);
+        
+        console.log('\n⚡【原生 IP 直连节点链接】:');
+        console.log(`vless://${UUID}@${IP}:${PORT}?encryption=none&security=none&type=ws&host=${IP}&path=%2Fvless-ws#Native-IP-Direct`);
+        
+        if (domainName) {
+          console.log('\n🌐【原生域名直连节点链接】:');
+          console.log(`vless://${UUID}@${domainName}:${PORT}?encryption=none&security=none&type=ws&host=${domainName}&path=%2Fvless-ws#Native-Domain-Direct`);
+        }
         console.log('==================================================\n');
       }
     });
